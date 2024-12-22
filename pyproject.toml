@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "seqabpy"
+dynamic = ["version"]
+license = "Apache-2.0"
+authors = [
+  { name="Nikita Podlozhniy", email="podlozhnyy.ne@phystech.edu" },
+]
+description = "Sequential A/B Testing Framework in Python"
+readme = "README.md"
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+keywords = [
+	"AB",
+	"Sequential",
+	"Testing",
+	"GST",
+	"AVI",
+]
+dependencies = [
+	"numpy",
+	"scipy",
+	"statsmodels",
+]
+
+[project.urls]
+Homepage = "https://github.com/NPodlozhniy/seqabpy"
+Issues = "https://npodlozhniy.github.io/posts/sequential-testing/"
+
+[tool.hatch.version]
+path = "src/seqabpy/__init__.py"
