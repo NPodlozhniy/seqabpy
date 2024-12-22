@@ -1,8 +1,17 @@
-import numpy as np
-from scipy.stats import norm
+import io
+from contextlib import redirect_stdout
+from typing import Union
+
+from scipy.optimize import brentq as root
+from scipy.stats import multivariate_normal
+from statsmodels.sandbox.distributions.extras import mvnormcdf
+
+from src.seqabpy import *
 
 
-def alpha_spending_function(t: np.ndarray, iuse: int=1, phi: float=1, alpha: float=0.05):
+def alpha_spending_function(
+    t: np.ndarray, iuse: int = 1, phi: float = 1, alpha: float = 0.05
+):
     """
     This function implements different alpha spending functions commonly used in sequential
     clinical trials or other statistical analyses where early stopping is possible.
@@ -37,19 +46,17 @@ def alpha_spending_function(t: np.ndarray, iuse: int=1, phi: float=1, alpha: flo
     """
     if iuse == 1:
         name = "O'Brien-Fleming"
-        spending = 2 * (1 - norm.cdf(norm.ppf(1 - alpha / 2) / np.sqrt(t ** phi)))
+        spending = 2 * (1 - norm.cdf(norm.ppf(1 - alpha / 2) / np.sqrt(t**phi)))
     elif iuse == 2:
         name = "Pocock"
         spending = alpha * np.log(1 + (np.exp(1) - 1) * t)
     elif iuse == 3:
         name = "Kim-DeMets"
-        spending = alpha * t ** phi
+        spending = alpha * t**phi
     elif iuse == 4:
         name = "Hwang-Shih-DeCani"
         spending = np.where(
-            phi == 0,
-            alpha * t,
-            alpha * (1 - np.exp(-phi * t)) / (1 - np.exp(-phi))
+            phi == 0, alpha * t, alpha * (1 - np.exp(-phi * t)) / (1 - np.exp(-phi))
         )
     elif iuse == 5:
         name = "Haybittle-Peto"
@@ -60,19 +67,12 @@ def alpha_spending_function(t: np.ndarray, iuse: int=1, phi: float=1, alpha: flo
     return (name, spending)
 
 
-import io
-from contextlib import redirect_stdout
-
-from statsmodels.sandbox.distributions.extras import mvnormcdf
-from scipy.stats import multivariate_normal
-
-
 def multivariate_norm_cdf(
     upper: np.ndarray,
     lower: np.ndarray,
     mean: np.ndarray,
     cov: np.ndarray,
-    focus: str="performance"
+    focus: str = "performance",
 ) -> float:
     """
     Calculates CDF of a multivariate normal distribution.
@@ -81,21 +81,22 @@ def multivariate_norm_cdf(
         if focus == "performance":
             return mvnormcdf(upper=upper, lower=lower, mu=mean, cov=cov)
         elif focus == "accuracy":
-            return multivariate_normal.cdf(x=upper, lower_limit=lower, mean=mean, cov=cov)
+            return multivariate_normal.cdf(
+                x=upper, lower_limit=lower, mean=mean, cov=cov
+            )
         else:
-            raise ValueError("Invalid `focus` value. Must be 'performance' or 'accuracy'.")
-
-
-from scipy.optimize import brentq as root
+            raise ValueError(
+                "Invalid `focus` value. Must be 'performance' or 'accuracy'."
+            )
 
 
 def calculate_sequential_bounds(
     time_points: np.ndarray,
-    alpha: float=0.05,
-    iuse: int=1,
-    phi: float=1,
-    beta: float=None,
-    tol: float=1e-05,
+    alpha: float = 0.05,
+    iuse: int = 1,
+    phi: float = 1,
+    beta: float = None,
+    tol: float = 1e-05,
 ) -> tuple:
     """
     Calculates the upper and lower bounds for a sequential design.
@@ -136,38 +137,60 @@ def calculate_sequential_bounds(
           * https://github.com/denim-bluu/advanced_ab_test_py/blob/main/src/seq_design/spend_func.py
     """
 
-    def calculate_upper_bound(x: float, upper_bounds: np.ndarray, covariance_matrix: np.ndarray, target_probability: float) -> float:
+    def calculate_upper_bound(
+        x: float,
+        upper_bounds: np.ndarray,
+        covariance_matrix: np.ndarray,
+        target_probability: float,
+    ) -> float:
         """Calculates the upper bound at a specific stage."""
         num_bounds = len(upper_bounds)
         lower_bounds = np.full(num_bounds, -np.inf)
         upper = np.concatenate((upper_bounds, [np.inf]))
         lower = np.concatenate((lower_bounds, [x]))
         mean_vector = np.zeros(num_bounds + 1)
-        probability = multivariate_norm_cdf(upper=upper, lower=lower, mean=mean_vector, cov=covariance_matrix)
+        probability = multivariate_norm_cdf(
+            upper=upper, lower=lower, mean=mean_vector, cov=covariance_matrix
+        )
         return target_probability - probability
 
-    def calculate_lower_bound(x: float, lower_bounds: np.ndarray, eta_mean: float, time_points: np.ndarray, covariance_matrix: np.ndarray, target_probability: float) -> float:
+    def calculate_lower_bound(
+        x: float,
+        lower_bounds: np.ndarray,
+        eta_mean: float,
+        time_points: np.ndarray,
+        covariance_matrix: np.ndarray,
+        target_probability: float,
+    ) -> float:
         """Calculates the lower bound at a specific stage."""
         num_bounds = len(lower_bounds)
         upper_bounds = np.full(num_bounds, np.inf)
         upper = np.concatenate((upper_bounds, [x]))
         lower = np.concatenate((lower_bounds, [-np.inf]))
         mean_vector = eta_mean * np.sqrt(time_points[: num_bounds + 1])
-        probability = multivariate_norm_cdf(upper=upper, lower=lower, mean=mean_vector, cov=covariance_matrix)
+        probability = multivariate_norm_cdf(
+            upper=upper, lower=lower, mean=mean_vector, cov=covariance_matrix
+        )
         return target_probability - probability
 
     # Generate time points
     num_stages = len(time_points)
 
     # Calculate alpha and beta spending functions (assuming this function is defined elsewhere)
-    _, alpha_spending = alpha_spending_function(time_points, iuse=iuse, phi=phi, alpha=alpha)
+    _, alpha_spending = alpha_spending_function(
+        time_points, iuse=iuse, phi=phi, alpha=alpha
+    )
 
     # Calculate incremental alpha and beta values
-    incremental_alpha = np.concatenate((alpha_spending[:1], alpha_spending[1:] - alpha_spending[:-1]))
+    incremental_alpha = np.concatenate(
+        (alpha_spending[:1], alpha_spending[1:] - alpha_spending[:-1])
+    )
 
     # Calculate covariance matrix (vectorized)
     i, j = np.indices((num_stages, num_stages))
-    covariance_matrix = np.minimum(time_points[i], time_points[j]) / np.sqrt(time_points[i] * time_points[j])
+    covariance_matrix = np.minimum(time_points[i], time_points[j]) / np.sqrt(
+        time_points[i] * time_points[j]
+    )
 
     # Initialize bounds
     upper_bounds = np.zeros(num_stages)
@@ -178,7 +201,11 @@ def calculate_sequential_bounds(
         if iuse == 5 and i < num_stages - 1:
             upper_bounds[i] = norm.ppf(1 - incremental_alpha[0])
         else:
-            args = (upper_bounds[:i], covariance_matrix[:i+1, :i+1], incremental_alpha[i])
+            args = (
+                upper_bounds[:i],
+                covariance_matrix[: i + 1, : i + 1],
+                incremental_alpha[i],
+            )
             upper_bounds[i] = root(calculate_upper_bound, -10, 10, args=args)
 
     # If beta is not provided, stopping for futility bounds are not calculated
@@ -186,8 +213,12 @@ def calculate_sequential_bounds(
         return (incremental_alpha, upper_bounds)
 
     # Apply same processing as for alpha earlier
-    name, beta_spending = alpha_spending_function(time_points, iuse=iuse, phi=phi, alpha=beta)
-    incremental_beta = np.concatenate((beta_spending[:1], beta_spending[1:] - beta_spending[:-1]))
+    name, beta_spending = alpha_spending_function(
+        time_points, iuse=iuse, phi=phi, alpha=beta
+    )
+    incremental_beta = np.concatenate(
+        (beta_spending[:1], beta_spending[1:] - beta_spending[:-1])
+    )
     lower_bounds = np.zeros(num_stages)
 
     # Calculate initial eta values
@@ -204,35 +235,58 @@ def calculate_sequential_bounds(
         iteration += 1
         boundary_violation = False  # Flag to check if lower bound exceeds upper bound
         eta_mean = (eta_0 + eta_1) / 2
-        lower_bounds[0] = norm.ppf(incremental_beta[0]) + eta_mean * np.sqrt(time_points[0])
+        lower_bounds[0] = norm.ppf(incremental_beta[0]) + eta_mean * np.sqrt(
+            time_points[0]
+        )
 
         if lower_bounds[0] > upper_bounds[0]:
             eta_1 = eta_mean  # Adjust eta_mean if initial lower bound is too high
         else:
             for i in range(1, num_stages):
                 if iuse == 5:
-                    lower_bounds[i] = norm.ppf(incremental_beta[0]) + eta_mean * np.sqrt(time_points[i])
+                    lower_bounds[i] = norm.ppf(
+                        incremental_beta[0]
+                    ) + eta_mean * np.sqrt(time_points[i])
                 else:
-                    args = (lower_bounds[:i], eta_mean, time_points, covariance_matrix[:i+1, :i+1], incremental_beta[i])
+                    args = (
+                        lower_bounds[:i],
+                        eta_mean,
+                        time_points,
+                        covariance_matrix[: i + 1, : i + 1],
+                        incremental_beta[i],
+                    )
                     lower_bounds[i] = root(calculate_lower_bound, -10, 10, args=args)
                 if lower_bounds[i] > upper_bounds[i]:
-                    eta_1 = eta_mean  # Adjust eta_mean if lower bound exceeds upper bound
+                    eta_1 = (
+                        eta_mean  # Adjust eta_mean if lower bound exceeds upper bound
+                    )
                     boundary_violation = True
                     break
 
             if not boundary_violation:
-                lower_bounds[num_stages-1] = upper_bounds[num_stages-1]  # Set last lower bound to last upper bound
+                lower_bounds[num_stages - 1] = upper_bounds[
+                    num_stages - 1
+                ]  # Set last lower bound to last upper bound
 
                 # Calculate cumulative probabilities
                 cumulative_probabilities = np.empty_like(lower_bounds)
-                cumulative_probabilities[0] = norm.cdf(lower_bounds[0], loc=eta_mean * np.sqrt(time_points[0]))
+                cumulative_probabilities[0] = norm.cdf(
+                    lower_bounds[0], loc=eta_mean * np.sqrt(time_points[0])
+                )
                 for i in range(1, num_stages):
                     upper = np.concatenate((upper_bounds[:i], [lower_bounds[i]]))
                     lower = np.concatenate((lower_bounds[:i], [-np.inf]))
-                    mean_vector = eta_mean * np.sqrt(time_points[:i+1])
-                    cumulative_probabilities[i] = multivariate_norm_cdf(upper=upper, lower=lower, mean=mean_vector, cov=covariance_matrix[:i+1, :i+1])
+                    mean_vector = eta_mean * np.sqrt(time_points[: i + 1])
+                    cumulative_probabilities[i] = multivariate_norm_cdf(
+                        upper=upper,
+                        lower=lower,
+                        mean=mean_vector,
+                        cov=covariance_matrix[: i + 1, : i + 1],
+                    )
 
-                beta_k = sum(cumulative_probabilities)  # Calculate overall beta at this stage
+                beta_k = sum(
+                    cumulative_probabilities
+                )  # Calculate overall beta at this stage
 
                 # Adjust eta_mean based on calculated beta_k
                 if beta_k < beta:
@@ -243,7 +297,7 @@ def calculate_sequential_bounds(
                 # Check for convergence
                 if abs(beta - beta_k) < tol:
                     converged = True
-                else: # Facilitate convergence
+                else:  # Facilitate convergence
                     tol += tol
 
     print(
@@ -254,7 +308,7 @@ def calculate_sequential_bounds(
     return (lower_bounds, upper_bounds)
 
 
-def ldBounds(t: np.ndarray, iuse: int=1, phi: float=1, alpha: float=0.05) -> dict:
+def ldBounds(t: np.ndarray, iuse: int = 1, phi: float = 1, alpha: float = 0.05) -> dict:
     """
     Calculates Lan-DeMets boundaries for group sequential testing.
 
@@ -294,13 +348,19 @@ def ldBounds(t: np.ndarray, iuse: int=1, phi: float=1, alpha: float=0.05) -> dic
     if iuse not in [1, 2, 3, 4, 5]:
         raise ValueError("Invalid iuse value. Must be 1, 2, 3, 4, or 5.")
     if iuse == 1 and phi < 1:
-        raise ValueError("Phi must be at least 1 for O'Brien-Fleming spending function.")
+        raise ValueError(
+            "Phi must be at least 1 for O'Brien-Fleming spending function."
+        )
     if iuse == 3 and phi <= 0:
         raise ValueError("Phi must be positive for Kim-DeMets spending function.")
     if iuse == 4 and phi < 0:
-        raise ValueError("Phi must be non-negative for Hwang-Shih-DeCani spending function.")
+        raise ValueError(
+            "Phi must be non-negative for Hwang-Shih-DeCani spending function."
+        )
     if iuse == 5 and phi < 1:
-        raise ValueError("Haybittle-Peto itermittent analyses have to be conservative, use phi >= 1 to set `3 * phi` as a critical value")
+        raise ValueError(
+            "Haybittle-Peto itermittent analyses have to be conservative, use phi >= 1 to set `3 * phi` as a critical value"
+        )
 
     alpha_spending, ubnd = calculate_sequential_bounds(
         time_points=t, alpha=alpha, iuse=iuse, phi=phi
@@ -310,15 +370,21 @@ def ldBounds(t: np.ndarray, iuse: int=1, phi: float=1, alpha: float=0.05) -> dic
     nominal_alpha = 1 - norm.cdf(ubnd)
 
     return {
-        'time.points': t,
-        'alpha.spending': alpha_spending,
-        'overall.alpha': np.sum(alpha_spending),
-        'upper.bounds': ubnd,
-        'nominal.alpha': nominal_alpha,
+        "time.points": t,
+        "alpha.spending": alpha_spending,
+        "overall.alpha": np.sum(alpha_spending),
+        "upper.bounds": ubnd,
+        "nominal.alpha": nominal_alpha,
     }
 
 
-def GST(actual: int|np.ndarray, expected: int|np.ndarray, iuse: int=1, phi: float=1, alpha: float=0.05) -> np.ndarray:
+def GST(
+    actual: Union[int, np.ndarray],
+    expected: Union[int, np.ndarray],
+    iuse: int = 1,
+    phi: float = 1,
+    alpha: float = 0.05,
+) -> np.ndarray:
     """
     Calculates GST bounds for peeking strategy that differs from expectations.
 
@@ -351,27 +417,34 @@ def GST(actual: int|np.ndarray, expected: int|np.ndarray, iuse: int=1, phi: floa
             "either both vectors or numbers for uniform peeking staretgy"
         )
     elif isinstance(expected, int):
-    # round to 5 decimals, machinery precision may break the comparisons
+        # round to 5 decimals, machinery precision may break the comparisons
         actual = (1 / expected * np.arange(1, 1 + actual)).round(5)
         expected = np.linspace(1 / expected, 1, expected).round(5)
     else:
-        if not all(0 <= i <= 1 for i in expected): # actual may have higher value
+        if not all(0 <= i <= 1 for i in expected):  # actual may have higher value
             raise ValueError("Information fractions (t) must be between 0 and 1.")
-        if not np.max(expected) == 1: # actual may have lower or higher value
+        if not np.max(expected) == 1:  # actual may have lower or higher value
             raise ValueError("Information fractions (t) must sum to 1.")
 
     relevant = ldBounds(t=expected, iuse=iuse, phi=phi, alpha=alpha)
-    bounds = relevant['upper.bounds']
-    spending = relevant['alpha.spending']
+    bounds = relevant["upper.bounds"]
+    spending = relevant["alpha.spending"]
 
-    def calculate_upper_bound(x: float, upper_bounds: np.ndarray, covariance_matrix: np.ndarray, target_probability: float) -> float:
+    def calculate_upper_bound(
+        x: float,
+        upper_bounds: np.ndarray,
+        covariance_matrix: np.ndarray,
+        target_probability: float,
+    ) -> float:
         """Calculates the upper bound at a specific stage."""
         num_bounds = len(upper_bounds)
         lower_bounds = np.full(num_bounds, -np.inf)
         upper = np.concatenate((upper_bounds, [np.inf]))
         lower = np.concatenate((lower_bounds, [x]))
         mean_vector = np.zeros(num_bounds + 1)
-        probability = multivariate_norm_cdf(upper=upper, lower=lower, mean=mean_vector, cov=covariance_matrix)
+        probability = multivariate_norm_cdf(
+            upper=upper, lower=lower, mean=mean_vector, cov=covariance_matrix
+        )
         return target_probability - probability
 
     # wrong experiment design
@@ -383,41 +456,54 @@ def GST(actual: int|np.ndarray, expected: int|np.ndarray, iuse: int=1, phi: floa
         return bounds
 
     # oversampling - naive over-sample trick suggested in literature
-    elif actual.size > expected.size and all(actual[:expected.size] == expected):
+    elif actual.size > expected.size and all(actual[: expected.size] == expected):
         oversampled_bounds = []
         for time in range(expected.size + 1, actual.size + 1):
-            oversampled_bounds.append(ldBounds(t=actual[:time] / np.max(actual[:time]), iuse=iuse, phi=phi, alpha=alpha)['upper.bounds'][-1])
+            oversampled_bounds.append(
+                ldBounds(
+                    t=actual[:time] / np.max(actual[:time]),
+                    iuse=iuse,
+                    phi=phi,
+                    alpha=alpha,
+                )["upper.bounds"][-1]
+            )
         bounds = np.concatenate((bounds, oversampled_bounds))
         return bounds
 
     # undersampling - procedure from the reference book
-    elif actual.size < expected.size and all(expected[:actual.size] == actual):
+    elif actual.size < expected.size and all(expected[: actual.size] == actual):
 
-        bounds = bounds[:actual.size-1]
+        bounds = bounds[: actual.size - 1]
         time_points = actual / np.max(actual)
 
         i, j = np.indices((actual.size, actual.size))
-        covariance_matrix = np.minimum(time_points[i], time_points[j]) / np.sqrt(time_points[i] * time_points[j])
+        covariance_matrix = np.minimum(time_points[i], time_points[j]) / np.sqrt(
+            time_points[i] * time_points[j]
+        )
 
-        args = (bounds, covariance_matrix, np.sum(spending[actual.size:]))
+        args = (bounds, covariance_matrix, np.sum(spending[actual.size :]))
         bounds = np.append(bounds, root(calculate_upper_bound, -10, 10, args=args))
         return bounds
 
     elif actual.size != expected.size:
-    # number of intermittent analyses and their timing during data collection needn't to be predetermined
-    # https://www.routledge.com/Group-Sequential-Methods-with-Applications-to-Clinical-Trials/Jennison-Turnbull/p/book/9780849303166
-         raise ValueError("The function doesn't handle well such massive deviation from expectations")
+        # number of intermittent analyses and their timing during data collection needn't to be predetermined
+        # https://www.routledge.com/Group-Sequential-Methods-with-Applications-to-Clinical-Trials/Jennison-Turnbull/p/book/9780849303166
+        raise ValueError(
+            "The function doesn't handle well such massive deviation from expectations"
+        )
 
-    else: # procedure from the reference book
+    else:  # procedure from the reference book
 
-        idx = np.argmin(actual[:expected.size] == expected[:actual.size])
+        idx = np.argmin(actual[: expected.size] == expected[: actual.size])
         bounds = bounds[:idx]
         time_points = actual / np.max(actual)
 
         for time in range(idx, len(actual)):
 
-            i, j = np.indices((time+1, time+1))
-            covariance_matrix = np.minimum(time_points[i], time_points[j]) / np.sqrt(time_points[i] * time_points[j])
+            i, j = np.indices((time + 1, time + 1))
+            covariance_matrix = np.minimum(time_points[i], time_points[j]) / np.sqrt(
+                time_points[i] * time_points[j]
+            )
 
             args = (bounds, covariance_matrix, spending[time])
             bounds = np.append(bounds, root(calculate_upper_bound, -10, 10, args=args))
