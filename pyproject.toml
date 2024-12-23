@@ -14,7 +14,7 @@ readme = "README.md"
 requires-python = ">=3.7"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
 ]
 keywords = [
@@ -36,3 +36,12 @@ Issues = "https://npodlozhniy.github.io/posts/sequential-testing/"
 
 [tool.hatch.version]
 path = "src/seqabpy/__init__.py"
+
+[tool.coverage.paths]
+source = [
+    "*/src",
+    "*\\src",
+    ]
+
+[tool.coverage.run]
+relative_files = true
