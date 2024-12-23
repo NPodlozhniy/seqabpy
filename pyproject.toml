@@ -45,4 +45,3 @@ source = [
 
 [tool.coverage.run]
 relative_files = true
-parallel = true # not sure here
