@@ -3,9 +3,7 @@
 
 name: PyPI
 
-on:
-  push:
-    branches: [ "master" ]
+on: push # no branch specified as the workflow is for tag's push
 
 jobs:
   release-build:
