@@ -3,7 +3,7 @@
 # https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
 # https://github.com/py-cov-action/python-coverage-comment-action
 
-name: CI
+name: Build
 
 on:
   push:
