@@ -25,9 +25,9 @@ keywords = [
 	"AVI",
 ]
 dependencies = [
-	"numpy>=1.21.6",
-	"scipy>=1.7.3",
-	"statsmodels~=0.13.5",
+	"numpy",
+	"scipy",
+	"statsmodels",
 ]
 
 [project.urls]
