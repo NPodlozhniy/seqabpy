@@ -1,6 +1,6 @@
 import numpy as np
 
-from src.seqabpy.gavi import *
+from seqabpy.gavi import *
 
 
 def test_sequential_p_value():

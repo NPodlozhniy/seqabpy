@@ -1,6 +1,6 @@
 from scipy.special import gammaln, loggamma, xlogy
 
-from src.seqabpy import *
+from seqabpy import *
 
 
 class AlwaysValidInference:

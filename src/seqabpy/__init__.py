@@ -1,6 +1,11 @@
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 import numpy as np
 from scipy.stats import norm
 
-from src.seqabpy import gatsby, gavi
+# np and norm are given to gatsby and gavi via (import *)
+from seqabpy import gatsby, gavi
+
+# once everything is imported, with (from seqabpy import *)
+# only gavi and gatsby will be imported
+__all__ = ["gatsby", "gavi"]

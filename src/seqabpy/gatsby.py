@@ -6,7 +6,7 @@ from scipy.optimize import brentq as root
 from scipy.stats import multivariate_normal
 from statsmodels.sandbox.distributions.extras import mvnormcdf
 
-from src.seqabpy import *
+from seqabpy import *
 
 
 def alpha_spending_function(

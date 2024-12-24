@@ -1,6 +1,6 @@
 import numpy as np
 
-from src.seqabpy.gatsby import *
+from seqabpy.gatsby import *
 
 def test_calculate_sequential_bounds():
     expected_bounds = (

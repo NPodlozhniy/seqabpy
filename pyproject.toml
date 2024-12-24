@@ -31,11 +31,19 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/NPodlozhniy/seqabpy"
-Issues = "https://npodlozhniy.github.io/posts/sequential-testing/"
+Homepage = "https://npodlozhniy.github.io/posts/sequential-testing/"
+"Source Code" = "https://github.com/NPodlozhniy/seqabpy"
 
 [tool.hatch.version]
 path = "src/seqabpy/__init__.py"
+
+# config works for pytest >= 7
+# for earlier version you may
+# a) set PYTHONPATH=".:src/"
+# b) set sys path in tests/__init__.py
+# c) run `pip install --editable .` prior to pytest
+[tool.pytest.ini_options]
+pythonpath = "src/"
 
 [tool.coverage.paths]
 source = [
