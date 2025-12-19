@@ -11,7 +11,7 @@ from seqabpy import *
 
 def alpha_spending_function(
     t: np.ndarray, iuse: int = 1, phi: float = 1, alpha: float = 0.05
-):
+) -> tuple:
     """
     This function implements different alpha spending functions commonly used in sequential
     clinical trials or other statistical analyses where early stopping is possible.
@@ -97,6 +97,9 @@ def calculate_sequential_bounds(
     phi: float = 1,
     beta: float = None,
     tol: float = 1e-05,
+    binding: bool = False,
+    beta_iuse: int = None,
+    beta_phi: float = None,
 ) -> tuple:
     """
     Calculates the upper and lower bounds for a sequential design.
@@ -105,7 +108,7 @@ def calculate_sequential_bounds(
     specified number of stages, alpha (Type I error rate), and beta (Type II error rate).
     It uses the brentq root-finding algorithm and multivariate normal CDF calculations.
 
-    1. If statistic value exceed upper bound - the null hypothesis id rejected
+    1. If statistic value exceed upper bound - the null hypothesis is rejected
         and superiority is declared.
     2. If statistic value is below the lower bound - the null hypothesis is not
         rejected and an experiment is stopped for futility.
@@ -117,6 +120,9 @@ def calculate_sequential_bounds(
         phi (float): A parameter used for alpha spending function
         beta (float, optional): The overall Type II error rate.
         tol (float, optional): The tolerance for the root-finding algorithm.
+        binding (bool, optional): If True binding algorithm in futility bounds calculation is used.
+        beta_iuse (int, optional): An indicator of beta spending function type, by default equal to iuse.
+        beta_phi (float, optional): A parameter used for beta spending function, by default equal to phi.
 
     Returns:
         tuple: contains the lower and upper bounds for each stage.
@@ -130,9 +136,17 @@ def calculate_sequential_bounds(
         Group sequential design for historical control trials using error
         spending functions. Journal of biopharmaceutical statistics, 30(2), 351–363.
         https://europepmc.org/article/MED/31718458#free-full-text
+      * Pampallona, S., Tsiatis, A.A., Kim, K.M. (2001)
+        Interim Monitoring of Group Sequential Trials Using Spending Functions
+        for the Type I and Type II Error Probabilities. Drug Information Journal 35:1113-1121
+        https://sci-hub.se/10.1177/009286150103500408
+      * Georgi Z. Georgiev (2017)
+        Efficient A/B Testing in Conversion Rate Optimization: The AGILE Statistical Method
+        Analytics-Toolkit.com (binding and non binding futility bounds)
+        https://www.analytics-toolkit.com/pdf/Efficient_AB_Testing_in_Conversion_Rate_Optimization_-_The_AGILE_Statistical_Method_2017.pdf
 
     Acknowledgments:
-      The following implementation beside all the rest was inspired by
+      The following implementation besides all the rest was inspired by
           * https://github.com/cran/ldbounds/blob/master/R/landem.R
           * https://github.com/denim-bluu/advanced_ab_test_py/blob/main/src/seq_design/spend_func.py
     """
@@ -142,15 +156,22 @@ def calculate_sequential_bounds(
         upper_bounds: np.ndarray,
         covariance_matrix: np.ndarray,
         target_probability: float,
+        known_lower_bounds: np.ndarray = None,
     ) -> float:
         """Calculates the upper bound at a specific stage."""
         num_bounds = len(upper_bounds)
-        lower_bounds = np.full(num_bounds, -np.inf)
+        if known_lower_bounds is not None and len(known_lower_bounds) == num_bounds:
+            # Use futility bounds in binding scenario
+            lower_bounds = known_lower_bounds
+            focus = "accuracy"
+        else:
+            lower_bounds = np.full(num_bounds, -np.inf)
+            focus = "performance"
         upper = np.concatenate((upper_bounds, [np.inf]))
         lower = np.concatenate((lower_bounds, [x]))
         mean_vector = np.zeros(num_bounds + 1)
         probability = multivariate_norm_cdf(
-            upper=upper, lower=lower, mean=mean_vector, cov=covariance_matrix
+            upper=upper, lower=lower, mean=mean_vector, cov=covariance_matrix, focus=focus
         )
         return target_probability - probability
 
@@ -214,7 +235,7 @@ def calculate_sequential_bounds(
 
     # Apply same processing as for alpha earlier
     name, beta_spending = alpha_spending_function(
-        time_points, iuse=iuse, phi=phi, alpha=beta
+        time_points, iuse=beta_iuse or iuse, phi=beta_phi or phi, alpha=beta
     )
     incremental_beta = np.concatenate(
         (beta_spending[:1], beta_spending[1:] - beta_spending[:-1])
@@ -239,29 +260,63 @@ def calculate_sequential_bounds(
             time_points[0]
         )
 
+        # current iteration upper bounds
+        # initialized with non-binding calculation result
+        current_upper_bounds = upper_bounds.copy()
+
         if lower_bounds[0] > upper_bounds[0]:
             eta_1 = eta_mean  # Adjust eta_mean if initial lower bound is too high
         else:
             for i in range(1, num_stages):
-                if iuse == 5:
+                if (beta_iuse or iuse) == 5:
                     lower_bounds[i] = norm.ppf(
                         incremental_beta[0]
                     ) + eta_mean * np.sqrt(time_points[i])
                 else:
-                    args = (
+                    if binding:
+                        # recalculate upper bound[i], binding to lower bound [:i]
+                        args_upper = (
+                            current_upper_bounds[:i],
+                            covariance_matrix[: i + 1, : i + 1],
+                            incremental_alpha[i],
+                            lower_bounds[:i]
+                        )
+                        # print(incremental_alpha[i], '\n' , incremental_alpha, '\n', lower_bounds)
+                        try:
+                            # attempt to find the binding root
+                            current_upper_bounds[i] = root(calculate_upper_bound, -10, 10, args=args_upper)
+                        except ValueError as e:
+                            # Fallback for the last step, where the algorithm may fail due to alpha exhaustion
+                            if i == num_stages - 1:
+                                # Final stage fallback: allow failure and use the non-binding bound
+                                pass
+                            else:
+                                raise ValueError(
+                                    f"Sequential bounds algorithm failed at interim stage {i + 1}. "
+                                    f"The root-finding algorithm (brentq) could not find a boundary "
+                                    f"within the search bracket. This is likely due to machinery precision "
+                                    f"limits or a highly conservative spending function (like "
+                                    f"O'Brien-Fleming) requiring an incremental alpha that is effectively "
+                                    f"zero. Original error: {e}"
+                                )
+
+                    args_lower = (
                         lower_bounds[:i],
                         eta_mean,
                         time_points,
                         covariance_matrix[: i + 1, : i + 1],
                         incremental_beta[i],
                     )
-                    lower_bounds[i] = root(calculate_lower_bound, -10, 10, args=args)
-                if lower_bounds[i] > upper_bounds[i]:
+                    lower_bounds[i] = root(calculate_lower_bound, -10, 10, args=args_lower)
+                if lower_bounds[i] > current_upper_bounds[i]: # Use current upper bound for the check
                     eta_1 = (
                         eta_mean  # Adjust eta_mean if lower bound exceeds upper bound
                     )
                     boundary_violation = True
                     break
+
+            if binding and not boundary_violation:
+                upper_bounds = current_upper_bounds.copy()
 
             if not boundary_violation:
                 lower_bounds[num_stages - 1] = upper_bounds[
@@ -301,7 +356,7 @@ def calculate_sequential_bounds(
                     tol += tol
 
     print(
-        f"Sequential bounds algorithm to stop for futility converged to {tol} "
+        f"Sequential boundaries {'non-' if not binding else ''}binding algorithm to stop for futility converged to {tol} "
         f"tolerance in {iteration} iterations using {name} spending function."
     )
 
@@ -328,8 +383,7 @@ def ldBounds(t: np.ndarray, iuse: int = 1, phi: float = 1, alpha: float = 0.05) 
         alpha: Overall significance level. Must be between 0 and 1.
 
     Returns:
-        A dictionary containing the upper and lower bounds for each
-        interim analysis.
+        A dictionary contains the upper bounds for each interim analysis.
 
     References:
       * K. K. Gordon Lan and David L. DeMets (1983)
@@ -386,7 +440,7 @@ def GST(
     alpha: float = 0.05,
 ) -> np.ndarray:
     """
-    Calculates GST bounds for peeking strategy that differs from expectations.
+    Calculates GST upper bounds for peeking strategy that differs from expectations.
 
     This function calculates Lan-DeMets boundaries for group sequential
     testing (GST) when the expected peeking strategy was slightly changed,
