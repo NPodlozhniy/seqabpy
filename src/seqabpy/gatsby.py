@@ -1,4 +1,5 @@
 import io
+import logging
 from contextlib import redirect_stdout
 from typing import Union
 
@@ -6,7 +7,8 @@ from scipy.optimize import brentq as root
 from scipy.stats import multivariate_normal
 from statsmodels.sandbox.distributions.extras import mvnormcdf
 
-from seqabpy import *
+import numpy as np
+from scipy.stats import norm
 
 
 def alpha_spending_function(
@@ -79,11 +81,22 @@ def multivariate_norm_cdf(
     """
     with redirect_stdout(io.StringIO()):
         if focus == "performance":
-            return mvnormcdf(upper=upper, lower=lower, mu=mean, cov=cov)
+            try:
+                return mvnormcdf(upper=upper, lower=lower, mu=mean, cov=cov)
+            except ImportError:
+                # mvnormcdf is unavailable with SciPy >= 1.16.0
+                return multivariate_normal.cdf(
+                    x=upper, lower_limit=lower, mean=mean, cov=cov
+                )
         elif focus == "accuracy":
-            return multivariate_normal.cdf(
-                x=upper, lower_limit=lower, mean=mean, cov=cov
-            )
+            try:
+                return multivariate_normal.cdf(
+                    x=upper, lower_limit=lower, mean=mean, cov=cov
+                )
+            except TypeError:
+                # SciPy < 1.10 lacks the lower_limit parameter;
+                # fall back to mvnormcdf which works on older SciPy
+                return mvnormcdf(upper=upper, lower=lower, mu=mean, cov=cov)
         else:
             raise ValueError(
                 "Invalid `focus` value. Must be 'performance' or 'accuracy'."
@@ -230,7 +243,7 @@ def calculate_sequential_bounds(
             upper_bounds[i] = root(calculate_upper_bound, -10, 10, args=args)
 
     # If beta is not provided, stopping for futility bounds are not calculated
-    if not beta:
+    if beta is None:
         return (incremental_alpha, upper_bounds)
 
     # Apply same processing as for alpha earlier
@@ -249,11 +262,18 @@ def calculate_sequential_bounds(
     # Loop metadata
     converged = False
     iteration = 0
+    max_iterations = 100
+    original_tol = tol
 
     # Calculate lower bounds and adjust eta_mean iteratively
     while not converged:
 
         iteration += 1
+        if iteration > max_iterations:
+            raise RuntimeError(
+                f"Sequential bounds algorithm did not converge after {max_iterations} iterations. "
+                f"Current tolerance: {tol}, original: {original_tol}."
+            )
         boundary_violation = False  # Flag to check if lower bound exceeds upper bound
         eta_mean = (eta_0 + eta_1) / 2
         lower_bounds[0] = norm.ppf(incremental_beta[0]) + eta_mean * np.sqrt(
@@ -281,7 +301,6 @@ def calculate_sequential_bounds(
                             incremental_alpha[i],
                             lower_bounds[:i]
                         )
-                        # print(incremental_alpha[i], '\n' , incremental_alpha, '\n', lower_bounds)
                         try:
                             # attempt to find the binding root
                             current_upper_bounds[i] = root(calculate_upper_bound, -10, 10, args=args_upper)
@@ -339,7 +358,7 @@ def calculate_sequential_bounds(
                         cov=covariance_matrix[: i + 1, : i + 1],
                     )
 
-                beta_k = sum(
+                beta_k = np.sum(
                     cumulative_probabilities
                 )  # Calculate overall beta at this stage
 
@@ -355,7 +374,8 @@ def calculate_sequential_bounds(
                 else:  # Facilitate convergence
                     tol += tol
 
-    print(
+    logger = logging.getLogger(__name__)
+    logger.info(
         f"Sequential boundaries {'non-' if not binding else ''}binding algorithm to stop for futility converged to {tol} "
         f"tolerance in {iteration} iterations using {name} spending function."
     )
@@ -413,7 +433,7 @@ def ldBounds(t: np.ndarray, iuse: int = 1, phi: float = 1, alpha: float = 0.05) 
         )
     if iuse == 5 and phi < 1:
         raise ValueError(
-            "Haybittle-Peto itermittent analyses have to be conservative, use phi >= 1 to set `3 * phi` as a critical value"
+            "Haybittle-Peto intermittent analyses have to be conservative, use phi >= 1 to set `3 * phi` as a critical value"
         )
 
     alpha_spending, ubnd = calculate_sequential_bounds(
@@ -444,7 +464,7 @@ def GST(
 
     This function calculates Lan-DeMets boundaries for group sequential
     testing (GST) when the expected peeking strategy was slightly changed,
-    fro example the data is over/under-sampled, meaning interim analyses
+    for example the data is over/under-sampled, meaning interim analyses
     are conducted more/less frequently than initially planned. It adjusts the
     boundary calculation to account for the actual number of analyses.
 
@@ -465,10 +485,10 @@ def GST(
         https://link.springer.com/book/10.1007/978-3-319-32562-0
     """
 
-    if type(actual) != type(expected):
+    if isinstance(actual, int) != isinstance(expected, int):
         raise ValueError(
             "Actual and Expected strategies must be of the same type: "
-            "either both vectors or numbers for uniform peeking staretgy"
+            "either both vectors or numbers for uniform peeking strategy"
         )
     elif isinstance(expected, int):
         # round to 5 decimals, machinery precision may break the comparisons

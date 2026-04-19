@@ -1,6 +1,7 @@
-from scipy.special import gammaln, loggamma, xlogy
+from scipy.special import gammaln, xlogy
 
-from seqabpy import *
+import numpy as np
+from scipy.stats import norm
 
 
 class AlwaysValidInference:
@@ -55,7 +56,7 @@ class AlwaysValidInference:
             The method implemented according to Chapter 3, Formulas 14 and 21;
             Used by Eppo https://docs.geteppo.com/statistics/confidence-intervals/statistical-nitty-gritty/#sequential
         """
-        if not phi:
+        if phi is None:
             phi = np.max(self.size)
         # variance of the difference in means
         V = 2 * self.sigma2 / self.size
@@ -141,7 +142,7 @@ class AlwaysValidInference:
         Args:
             N: The maximum sample size.
         """
-        if not N:
+        if N is None:
             N = np.max(self.size)
         # we assume that sample sizes are equal
         V = 2 * self.sigma2 / self.size  # variance of the difference in means
@@ -194,12 +195,12 @@ def sequential_p_value(counts, assignment_probabilities, dirichlet_alpha=None):
     else:
         dirichlet_alpha = np.array(dirichlet_alpha)
     lm1 = (
-        loggamma(counts.sum() + 1)
-        - loggamma(counts + 1).sum()
-        + loggamma(dirichlet_alpha.sum())
-        - loggamma(dirichlet_alpha).sum()
-        + loggamma(dirichlet_alpha + counts).sum()
-        - loggamma((dirichlet_alpha + counts).sum())
+        gammaln(counts.sum() + 1)
+        - gammaln(counts + 1).sum()
+        + gammaln(dirichlet_alpha.sum())
+        - gammaln(dirichlet_alpha).sum()
+        + gammaln(dirichlet_alpha + counts).sum()
+        - gammaln((dirichlet_alpha + counts).sum())
     )
     lm0 = gammaln(counts.sum() + 1) + np.sum(
         xlogy(counts, assignment_probabilities) - gammaln(counts + 1), axis=-1
