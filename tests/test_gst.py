@@ -81,14 +81,14 @@ class TestMultivariateNormCdf:
         result = multivariate_norm_cdf(upper, lower, mean, cov, focus="accuracy")
         np.testing.assert_allclose(result, 0.4980, atol=0.001)
 
-    def test_1d_degerate(self):
-        # 1D case: should match norm.cdf(1.96) - norm.cdf(-1.96) ≈ 0.95
-        upper = np.array([1.96])
-        lower = np.array([-1.96])
-        mean = np.array([0.0])
-        cov = np.array([[1.0]])
+    def test_2d_independent(self):
+        # Independent dimensions: P(-1.96<X1<1.96, -1.96<X2<1.96) ≈ 0.95^2 ≈ 0.9025
+        upper = np.array([1.96, 1.96])
+        lower = np.array([-1.96, -1.96])
+        mean = np.array([0.0, 0.0])
+        cov = np.array([[1.0, 0.0], [0.0, 1.0]])
         result = multivariate_norm_cdf(upper, lower, mean, cov, focus="accuracy")
-        np.testing.assert_allclose(result, 0.95, atol=0.001)
+        np.testing.assert_allclose(result, 0.95**2, atol=0.001)
 
     def test_performance_mode_fallback(self):
         # "performance" mode falls back to "accuracy" on SciPy >= 1.16
